@@ -4,7 +4,7 @@
   "description": "",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc && cp src/index.html dist/index.html"
+    "build": "tsc && cp src/index.html dist/index.html && cp src/Loop.mp4 dist/Loop.mp4"
   },
   "dependencies": {},
   "devDependencies": {
