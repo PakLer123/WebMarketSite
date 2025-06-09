@@ -1194,98 +1194,576 @@
 <div class="overlay" id="overlay"></div>
 
 <script>
-    // Cart functionality
-    const cartToggle = document.getElementById('cart-toggle');
-    const cartSidebar = document.getElementById('cart-sidebar');
-    const closeCart = document.getElementById('close-cart');
-    const overlay = document.getElementById('overlay');
+    // API Configuration
+    const API_BASE_URL = 'http://localhost:8000';
 
-    cartToggle.addEventListener('click', () => {
-        cartSidebar.classList.add('active');
-        overlay.classList.add('active');
-    });
+    // Global state
+    let allTemplates = [];
+    let cartItems = [];
 
-    closeCart.addEventListener('click', () => {
-        cartSidebar.classList.remove('active');
-        overlay.classList.remove('active');
-    });
+    // ================== API FUNCTIONS ==================
 
-    overlay.addEventListener('click', () => {
-        cartSidebar.classList.remove('active');
-        overlay.classList.remove('active');
-        quickViewModal.classList.remove('active');
-    });
-
-    // Quick View functionality
-    const quickViewModal = document.getElementById('quick-view-modal');
-    const closeModal = document.getElementById('close-modal');
-    const quickAddButtons = document.querySelectorAll('.quick-add button');
-
-    quickAddButtons.forEach(button => {
-        button.addEventListener('click', (e) => {
-            e.stopPropagation();
-            quickViewModal.classList.add('active');
-            overlay.classList.add('active');
-        });
-    });
-
-    closeModal.addEventListener('click', () => {
-        quickViewModal.classList.remove('active');
-        overlay.classList.remove('active');
-    });
-
-    // Smooth scroll for navigation links
-    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-        anchor.addEventListener('click', function (e) {
-            e.preventDefault();
-            const target = document.querySelector(this.getAttribute('href'));
-            if (target) {
-                target.scrollIntoView({
-                    behavior: 'smooth',
-                    block: 'start'
-                });
+    async function fetchTemplates(category = null, limit = 20) {
+        try {
+            let url = `${API_BASE_URL}/api/templates?limit=${limit}`;
+            if (category) {
+                url += `&category=${encodeURIComponent(category)}`;
             }
-        });
-    });
 
-    // Add to cart animation
-    const addToCartButtons = document.querySelectorAll('.add-to-cart-btn, .quick-add button');
-    addToCartButtons.forEach(button => {
-        button.addEventListener('click', function(e) {
-            e.stopPropagation();
-            const originalText = this.textContent;
-            this.textContent = 'Added!';
-            setTimeout(() => {
-                this.textContent = originalText;
-            }, 1500);
-        });
-    });
+            const response = await fetch(url);
+            if (!response.ok) throw new Error('Failed to fetch templates');
 
-    // Parallax effect for hero section
-    window.addEventListener('scroll', () => {
-        const scrolled = window.pageYOffset;
-        const hero = document.querySelector('.hero');
-        hero.style.transform = `translateY(${scrolled * 0.5}px)`;
-    });
-
-    // Video loading handler
-    const heroVideo = document.querySelector('.hero-video');
-    if (heroVideo) {
-        heroVideo.addEventListener('error', function() {
-            console.log('Video failed to load. Falling back to gradient background.');
-            // Hide video on error
-            heroVideo.style.display = 'none';
-        });
-
-        // Optional: Add loading state
-        heroVideo.addEventListener('loadstart', function() {
-            console.log('Video loading...');
-        });
-
-        heroVideo.addEventListener('canplay', function() {
-            console.log('Video ready to play');
-        });
+            const data = await response.json();
+            console.log('Templates loaded:', data.templates.length);
+            return data.templates;
+        } catch (error) {
+            console.error('Error fetching templates:', error);
+            return [];
+        }
     }
+
+    async function searchTemplates(query, category = null) {
+        try {
+            let url = `${API_BASE_URL}/api/search?q=${encodeURIComponent(query)}`;
+            if (category) {
+                url += `&category=${encodeURIComponent(category)}`;
+            }
+
+            const response = await fetch(url);
+            if (!response.ok) throw new Error('Search failed');
+
+            const data = await response.json();
+            console.log('Search results:', data.results.length);
+            return data.results;
+        } catch (error) {
+            console.error('Error searching templates:', error);
+            return [];
+        }
+    }
+
+    async function addToCartAPI(templateId) {
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/cart/add`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ template_id: templateId })
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Failed to add to cart');
+            }
+
+            const result = await response.json();
+            console.log('Added to cart:', result);
+            return result;
+        } catch (error) {
+            console.error('Error adding to cart:', error);
+            throw error;
+        }
+    }
+
+    async function getCartAPI() {
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/cart`);
+            if (!response.ok) throw new Error('Failed to get cart');
+
+            const data = await response.json();
+            console.log('Cart data:', data);
+            return data;
+        } catch (error) {
+            console.error('Error getting cart:', error);
+            return { items: [], total_items: 0, total_price: 0 };
+        }
+    }
+
+    async function removeFromCartAPI(itemId) {
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/cart/${itemId}`, {
+                method: 'DELETE'
+            });
+
+            if (!response.ok) throw new Error('Failed to remove from cart');
+
+            const result = await response.json();
+            console.log('Removed from cart:', result);
+            return result;
+        } catch (error) {
+            console.error('Error removing from cart:', error);
+            throw error;
+        }
+    }
+
+    async function clearCartAPI() {
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/cart/clear`, {
+                method: 'DELETE'
+            });
+
+            if (!response.ok) throw new Error('Failed to clear cart');
+
+            const result = await response.json();
+            console.log('Cart cleared:', result);
+            return result;
+        } catch (error) {
+            console.error('Error clearing cart:', error);
+            throw error;
+        }
+    }
+
+    // ================== UI UPDATE FUNCTIONS ==================
+
+    function renderTemplates(templates) {
+        const carousel = document.querySelector('.products-carousel');
+        if (!carousel) {
+            console.error('Products carousel not found');
+            return;
+        }
+
+        carousel.innerHTML = templates.map(template => `
+        <div class="product-card" data-template-id="${template.id}">
+            <div class="product-image">
+                <img src="${template.image_url}" alt="${template.title}" loading="lazy">
+                <div class="quick-add">
+                    <button onclick="handleAddToCart(${template.id})">Add to Cart</button>
+                </div>
+            </div>
+            <div class="product-info">
+                <h3 class="product-name">${template.title}</h3>
+                <p class="product-artisan">by ${template.author}</p>
+                <p class="product-price">$${template.price}</p>
+                <div class="template-stats">
+                    <span class="downloads">${template.downloads.toLocaleString()} downloads</span>
+                    <span class="rating">⭐ ${template.rating}</span>
+                </div>
+            </div>
+        </div>
+    `).join('');
+
+        console.log(`Rendered ${templates.length} templates`);
+    }
+
+    function renderCollections(templates) {
+        const categories = [...new Set(templates.map(t => t.category))];
+        const collectionsGrid = document.querySelector('.collections-grid');
+
+        if (!collectionsGrid) {
+            console.error('Collections grid not found');
+            return;
+        }
+
+        collectionsGrid.innerHTML = categories.map(category => {
+            const categoryTemplates = templates.filter(t => t.category === category);
+            const firstTemplate = categoryTemplates[0];
+
+            return `
+            <div class="collection-card" onclick="filterByCategory('${category}')" style="cursor: pointer;">
+                <img src="${firstTemplate?.image_url || 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800'}" alt="${category} Collection" loading="lazy">
+                <div class="collection-overlay">
+                    <h3 class="collection-title">${category} Templates</h3>
+                    <p class="collection-count">${categoryTemplates.length} templates</p>
+                </div>
+            </div>
+        `;
+        }).join('');
+
+        console.log(`Rendered ${categories.length} categories`);
+    }
+
+    async function updateCartDisplay() {
+        try {
+            const cartData = await getCartAPI();
+            cartItems = cartData.items;
+
+            // Update cart count in navigation
+            const cartCount = document.querySelector('.cart-count');
+            if (cartCount) {
+                cartCount.textContent = cartData.total_items;
+                cartCount.style.display = cartData.total_items > 0 ? 'block' : 'none';
+            }
+
+            // Update cart sidebar
+            const cartItemsContainer = document.querySelector('.cart-items');
+            const cartTotal = document.querySelector('.cart-total span:last-child');
+            const cartHeader = document.querySelector('.cart-header h3');
+
+            if (cartItemsContainer) {
+                if (cartItems.length === 0) {
+                    cartItemsContainer.innerHTML = `
+                    <div style="text-align: center; padding: 40px 20px; color: var(--light-grey);">
+                        <p>Your cart is empty</p>
+                        <p style="font-size: 14px; margin-top: 10px;">Browse templates and add some to your cart!</p>
+                    </div>
+                `;
+                } else {
+                    cartItemsContainer.innerHTML = cartItems.map(item => `
+                    <div class="cart-item" data-item-id="${item.id}">
+                        <div class="cart-item-image">
+                            <img src="${item.template.image_url}" alt="${item.template.title}" loading="lazy">
+                        </div>
+                        <div class="cart-item-details">
+                            <h4 class="cart-item-name">${item.template.title}</h4>
+                            <p class="cart-item-price">$${item.template.price}</p>
+                            <div class="cart-item-quantity">
+                                <span>Qty: ${item.quantity}</span>
+                                <button class="remove-btn" onclick="handleRemoveFromCart(${item.id})" title="Remove item">
+                                    ✕ Remove
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+                }
+            }
+
+            if (cartTotal) {
+                cartTotal.textContent = `$${cartData.total_price.toFixed(2)}`;
+            }
+
+            if (cartHeader) {
+                cartHeader.textContent = `Your Cart (${cartData.total_items})`;
+            }
+
+            // Update checkout button
+            const checkoutButton = document.querySelector('.checkout-button');
+            if (checkoutButton) {
+                checkoutButton.disabled = cartData.total_items === 0;
+                checkoutButton.style.opacity = cartData.total_items === 0 ? '0.5' : '1';
+            }
+
+            console.log(`Cart updated: ${cartData.total_items} items, $${cartData.total_price.toFixed(2)}`);
+
+        } catch (error) {
+            console.error('Error updating cart display:', error);
+            showNotification('Failed to update cart', 'error');
+        }
+    }
+
+    // ================== EVENT HANDLERS ==================
+
+    async function handleAddToCart(templateId) {
+        const button = event.target;
+        const originalText = button.textContent;
+
+        try {
+            // Show loading state
+            button.textContent = 'Adding...';
+            button.disabled = true;
+
+            const result = await addToCartAPI(templateId);
+
+            // Show success state
+            button.textContent = 'Added!';
+            showNotification('Template added to cart!', 'success');
+
+            // Update cart display
+            await updateCartDisplay();
+
+            // Auto-open cart sidebar
+            setTimeout(() => {
+                const cartSidebar = document.getElementById('cart-sidebar');
+                const overlay = document.getElementById('overlay');
+                if (cartSidebar && overlay) {
+                    cartSidebar.classList.add('active');
+                    overlay.classList.add('active');
+                }
+            }, 500);
+
+        } catch (error) {
+            console.error('Add to cart failed:', error);
+            if (error.message.includes('already in cart')) {
+                showNotification('Template already in cart!', 'info');
+            } else {
+                showNotification(error.message, 'error');
+            }
+        } finally {
+            // Reset button
+            setTimeout(() => {
+                button.textContent = originalText;
+                button.disabled = false;
+            }, 2000);
+        }
+    }
+
+    async function handleRemoveFromCart(itemId) {
+        try {
+            await removeFromCartAPI(itemId);
+            showNotification('Item removed from cart', 'success');
+            await updateCartDisplay();
+        } catch (error) {
+            console.error('Remove from cart failed:', error);
+            showNotification('Failed to remove item', 'error');
+        }
+    }
+
+    async function filterByCategory(category) {
+        try {
+            showNotification(`Loading ${category} templates...`, 'info');
+            const templates = await fetchTemplates(category);
+            renderTemplates(templates);
+            showNotification(`Showing ${templates.length} ${category} templates`, 'success');
+
+            // Scroll to templates section
+            const templatesSection = document.querySelector('.products-carousel').closest('section');
+            if (templatesSection) {
+                templatesSection.scrollIntoView({ behavior: 'smooth' });
+            }
+        } catch (error) {
+            console.error('Error filtering by category:', error);
+            showNotification('Failed to load templates', 'error');
+        }
+    }
+
+    async function handleSearch(query) {
+        if (!query || query.trim().length < 2) {
+            // If empty search, load all templates
+            const templates = await fetchTemplates();
+            renderTemplates(templates);
+            return;
+        }
+
+        try {
+            showNotification(`Searching for "${query}"...`, 'info');
+            const results = await searchTemplates(query.trim());
+            renderTemplates(results);
+
+            if (results.length === 0) {
+                showNotification(`No templates found for "${query}"`, 'info');
+            } else {
+                showNotification(`Found ${results.length} templates for "${query}"`, 'success');
+            }
+
+            // Scroll to results
+            const templatesSection = document.querySelector('.products-carousel').closest('section');
+            if (templatesSection) {
+                templatesSection.scrollIntoView({ behavior: 'smooth' });
+            }
+        } catch (error) {
+            console.error('Error searching:', error);
+            showNotification('Search failed', 'error');
+        }
+    }
+
+    async function handleClearCart() {
+        if (cartItems.length === 0) return;
+
+        if (confirm('Are you sure you want to clear your cart?')) {
+            try {
+                await clearCartAPI();
+                showNotification('Cart cleared', 'success');
+                await updateCartDisplay();
+            } catch (error) {
+                console.error('Clear cart failed:', error);
+                showNotification('Failed to clear cart', 'error');
+            }
+        }
+    }
+
+    // ================== UTILITY FUNCTIONS ==================
+
+    function showNotification(message, type = 'info') {
+        // Remove existing notifications
+        document.querySelectorAll('.notification').forEach(n => n.remove());
+
+        const notification = document.createElement('div');
+        notification.className = `notification notification-${type}`;
+        notification.textContent = message;
+
+        const colors = {
+            success: '#4CAF50',
+            error: '#f44336',
+            info: '#2196F3',
+            warning: '#ff9800'
+        };
+
+        notification.style.cssText = `
+        position: fixed;
+        top: 80px;
+        right: 20px;
+        background: ${colors[type] || colors.info};
+        color: white;
+        padding: 12px 20px;
+        border-radius: 6px;
+        z-index: 10000;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        transform: translateX(100%);
+        transition: transform 0.3s ease;
+        max-width: 300px;
+        font-size: 14px;
+    `;
+
+        document.body.appendChild(notification);
+
+        // Slide in
+        setTimeout(() => {
+            notification.style.transform = 'translateX(0)';
+        }, 10);
+
+        // Slide out and remove
+        setTimeout(() => {
+            notification.style.transform = 'translateX(100%)';
+            setTimeout(() => notification.remove(), 300);
+        }, 3000);
+    }
+
+    // ================== INITIALIZATION ==================
+
+    async function initializeApp() {
+        try {
+            console.log('🚀 Initializing WebMarket App...');
+
+            // Test API connection
+            const testResponse = await fetch(`${API_BASE_URL}/api/health`);
+            if (!testResponse.ok) throw new Error('API not available');
+
+            console.log('✅ API connection successful');
+
+            // Load all templates
+            allTemplates = await fetchTemplates();
+            console.log(`📦 Loaded ${allTemplates.length} templates`);
+
+            if (allTemplates.length === 0) {
+                showNotification('No templates available', 'warning');
+                return;
+            }
+
+            // Render templates in the carousel
+            renderTemplates(allTemplates);
+
+            // Render collections
+            renderCollections(allTemplates);
+
+            // Load and update cart
+            await updateCartDisplay();
+
+            console.log('✅ App initialized successfully!');
+            showNotification('Templates loaded successfully!', 'success');
+
+        } catch (error) {
+            console.error('❌ Error initializing app:', error);
+
+            if (error.message.includes('fetch')) {
+                showNotification('API server not running. Please start the backend server.', 'error');
+            } else {
+                showNotification('Failed to load templates. Please refresh the page.', 'error');
+            }
+        }
+    }
+
+    // ================== DOM EVENT LISTENERS ==================
+
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('DOM loaded, initializing app...');
+
+        // Initialize the app with real data
+        initializeApp();
+
+        // Cart sidebar functionality
+        const cartToggle = document.getElementById('cart-toggle');
+        const cartSidebar = document.getElementById('cart-sidebar');
+        const closeCart = document.getElementById('close-cart');
+        const overlay = document.getElementById('overlay');
+        const quickViewModal = document.getElementById('quick-view-modal');
+        const closeModal = document.getElementById('close-modal');
+
+        if (cartToggle) {
+            cartToggle.addEventListener('click', async () => {
+                await updateCartDisplay(); // Refresh cart data
+                cartSidebar.classList.add('active');
+                overlay.classList.add('active');
+            });
+        }
+
+        if (closeCart) {
+            closeCart.addEventListener('click', () => {
+                cartSidebar.classList.remove('active');
+                overlay.classList.remove('active');
+            });
+        }
+
+        if (overlay) {
+            overlay.addEventListener('click', () => {
+                cartSidebar.classList.remove('active');
+                overlay.classList.remove('active');
+                if (quickViewModal) {
+                    quickViewModal.classList.remove('active');
+                }
+            });
+        }
+
+        // Quick view modal functionality
+        if (closeModal) {
+            closeModal.addEventListener('click', () => {
+                quickViewModal.classList.remove('active');
+                overlay.classList.remove('active');
+            });
+        }
+
+        // Add search functionality
+        const searchButton = document.querySelector('button[aria-label="Search"]');
+        if (searchButton) {
+            searchButton.addEventListener('click', () => {
+                const query = prompt('Search templates:');
+                if (query) {
+                    handleSearch(query);
+                }
+            });
+        }
+
+        // Add clear cart button functionality
+        const clearCartBtn = document.createElement('button');
+        clearCartBtn.textContent = 'Clear Cart';
+        clearCartBtn.style.cssText = `
+        background: transparent;
+        border: 1px solid var(--medium-grey);
+        color: var(--text-light);
+        padding: 8px 16px;
+        margin-top: 10px;
+        cursor: pointer;
+        width: 100%;
+        border-radius: 4px;
+    `;
+        clearCartBtn.addEventListener('click', handleClearCart);
+
+        const cartFooter = document.querySelector('.cart-footer');
+        if (cartFooter) {
+            cartFooter.appendChild(clearCartBtn);
+        }
+
+        // Smooth scroll for navigation links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
+
+        // Add to cart animation for existing buttons
+        const addToCartButtons = document.querySelectorAll('.add-to-cart-btn');
+        addToCartButtons.forEach(button => {
+            button.addEventListener('click', function(e) {
+                e.stopPropagation();
+                // This will be handled by the onclick handlers we add dynamically
+            });
+        });
+
+        console.log('✅ Event listeners attached');
+    });
+
+    // ================== EXPOSE FUNCTIONS GLOBALLY ==================
+    // Make functions available for onclick handlers
+    window.handleAddToCart = handleAddToCart;
+    window.handleRemoveFromCart = handleRemoveFromCart;
+    window.filterByCategory = filterByCategory;
+    window.handleSearch = handleSearch;
 </script>
 </body>
 </html>
