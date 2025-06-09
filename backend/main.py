@@ -171,7 +171,7 @@ async def root():
         "message": "WebMarket API is running!",
         "version": "1.0.0",
         "docs": "/api/docs",
-        "frontend": "/static/index.html"
+        "frontend": "/src/index.html"
     }
 
 
@@ -386,7 +386,7 @@ async def get_stats():
 @app.get("/frontend")
 async def serve_frontend():
     """Serve the frontend HTML file"""
-    frontend_file = "../frontend/index.html"
+    frontend_file = "../src/index.html"
     if os.path.exists(frontend_file):
         return FileResponse(frontend_file)
     else:
